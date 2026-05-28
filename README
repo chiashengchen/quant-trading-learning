@@ -1,0 +1,11 @@
+## Start
+
+```bash
+> source .venv/bin/activate
+```
+
+## End
+
+```bash
+> deactivate
+```
