@@ -4,7 +4,7 @@ from config import TRADING_DAYS
 
 
 def performance_metrics_from_returns(returns):
-    returns = returns.fillna(0)
+    returns = returns.replace([np.inf, -np.inf], np.nan).fillna(0)
     equity = (1 + returns).cumprod()
 
     total_return = equity.iloc[-1] - 1
@@ -31,7 +31,7 @@ def performance_metrics_from_returns(returns):
 
 def performance_metrics_from_equity(equity):
     equity = equity.dropna()
-    returns = equity.pct_change().fillna(0)
+    returns = equity.pct_change().replace([np.inf, -np.inf], np.nan).fillna(0)
 
     total_return = equity.iloc[-1] - 1
     annualized_return = equity.iloc[-1] ** (TRADING_DAYS / len(equity)) - 1

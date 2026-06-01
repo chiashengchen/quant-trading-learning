@@ -167,7 +167,7 @@ def main():
         close_table,
         lookback=60,
         top_n=2,
-        rebalance_freq="M",
+        rebalance_freq="ME",
     )
 
     cs_metrics = performance_metrics_from_equity(

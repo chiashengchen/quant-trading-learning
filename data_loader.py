@@ -1,5 +1,6 @@
 from FinMind.data import DataLoader
 import pandas as pd
+import numpy as np
 
 
 def load_stock_data(stock_id, start_date, end_date):
@@ -33,6 +34,15 @@ def build_close_table(data):
     for stock_id, df in data.items():
         close_table[stock_id] = df["close"]
 
+    close_table = close_table.sort_index()
+
+    # 0 價格不合理，先視為缺值
+    close_table = close_table.replace(0, np.nan)
+
+    # 用前一天價格補值
+    close_table = close_table.ffill()
+
+    # 移除最前面仍然缺資料的 row
     close_table = close_table.dropna()
 
     return close_table
