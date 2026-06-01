@@ -1,253 +1,222 @@
-from FinMind.data import DataLoader
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
+from data_loader import load_stock_data, load_multiple_stocks, build_close_table
+
+from strategies import (
+    buy_and_hold,
+    ma_strategy,
+    mean_reversion_strategy,
+    time_series_momentum_strategy,
+)
+
+from backtest import (
+    compare_ma_params,
+    train_test_ma,
+    walk_forward_test,
+    add_ma_signal,
+    cash_backtest,
+    extract_trades,
+)
+
+from portfolio import (
+    equal_weight_portfolio,
+    monthly_rebalance_portfolio,
+    cross_sectional_momentum,
+)
+
+from metrics import (
+    performance_metrics_from_returns,
+    performance_metrics_from_equity,
+    print_metrics,
+    format_result_table,
+)
+
+from analysis import rolling_sharpe, build_strategy_comparison, trade_summary
+
+from plotting import (
+    plot_price_with_ma,
+    plot_equity,
+    plot_rolling_sharpe,
+)
 
 
-def load_stock_data(stock_id, start_date, end_date):
-    api = DataLoader()
+def main():
+    stock_id = "0050"
+    start_date = "2015-01-01"
+    end_date = "2025-01-01"
 
-    df = api.taiwan_stock_daily(
-        stock_id=stock_id,
-        start_date=start_date,
-        end_date=end_date
+    df = load_stock_data(stock_id, start_date, end_date)
+
+    # Buy and Hold
+    bh_df = buy_and_hold(df)
+    bh_metrics = performance_metrics_from_returns(bh_df["return"])
+    print_metrics("Buy and Hold", bh_metrics)
+
+    # MA Strategy
+    ma_df = ma_strategy(df, short_window=20, long_window=60)
+    ma_metrics = performance_metrics_from_returns(
+        ma_df["strategy_return_with_cost"]
+    )
+    print_metrics("MA20/60 Strategy", ma_metrics)
+
+    # Mean Reversion
+    mr_df = mean_reversion_strategy(df, window=20, entry_z=-2, exit_z=0)
+    mr_metrics = performance_metrics_from_returns(
+        mr_df["strategy_return_with_cost"]
+    )
+    print_metrics("Mean Reversion Strategy", mr_metrics)
+
+    # Momentum
+    mom_df = time_series_momentum_strategy(df, lookback=60)
+    mom_metrics = performance_metrics_from_returns(
+        mom_df["strategy_return_with_cost"]
+    )
+    print_metrics("Time-Series Momentum Strategy", mom_metrics)
+
+    # MA Parameter Comparison
+    param_list = [
+        (5, 20),
+        (20, 60),
+        (50, 200),
+    ]
+
+    ma_param_table = compare_ma_params(df, param_list)
+
+    print("\nMA Parameter Comparison")
+    print(format_result_table(ma_param_table))
+
+    # Train / Test
+    tt_result = train_test_ma(
+        df=df,
+        param_list=param_list,
+        train_start="2015-01-01",
+        train_end="2020-12-31",
+        test_start="2021-01-01",
+        test_end="2025-01-01",
     )
 
-    df["date"] = pd.to_datetime(df["date"])
-    df = df.sort_values("date")
-    df = df.set_index("date")
+    print("\nTrain Result")
+    print(format_result_table(tt_result["train_result"]))
 
-    return df
+    print("\nBest MA Parameters")
+    print("Short MA:", tt_result["best_short"])
+    print("Long MA:", tt_result["best_long"])
 
+    print_metrics("Test Performance", tt_result["test_metrics"])
 
-def ma_strategy(df, short_window, long_window, cost=0.001):
-    df = df.copy()
+    # Walk Forward
+    wf_result = walk_forward_test(
+        df=df,
+        param_list=param_list,
+        train_years=3,
+        test_years=1,
+    )
 
-    df["return"] = df["close"].pct_change()
+    print("\nWalk Forward Result")
+    print(wf_result)
 
-    df["short_ma"] = df["close"].rolling(short_window).mean()
-    df["long_ma"] = df["close"].rolling(long_window).mean()
+    # Cash Backtest
+    df_signal = add_ma_signal(df, short_window=20, long_window=60)
 
-    df["signal"] = 0
-    df.loc[df["short_ma"] > df["long_ma"], "signal"] = 1
+    cash_result = cash_backtest(
+        df_signal,
+        initial_cash=100000,
+        fee_rate=0.001425,
+        tax_rate=0.003,
+    )
 
-    df["position"] = df["signal"].shift(1).fillna(0)
+    cash_metrics = performance_metrics_from_equity(cash_result["equity"])
+    print_metrics("Cash Backtest MA20/60", cash_metrics)
 
-    df["trade"] = df["position"].diff().abs().fillna(0)
+    trades = extract_trades(cash_result)
 
-    df["strategy_return"] = df["position"] * df["return"]
+    print("\nTrade Records")
+    print(trades)
 
-    df["strategy_return_with_cost"] = df["strategy_return"] - df["trade"] * cost
+    print("\nTrade Summary")
+    print(trade_summary(trades))
 
-    df["buy_hold_equity"] = (1 + df["return"].fillna(0)).cumprod()
-    df["strategy_equity"] = (1 + df["strategy_return"].fillna(0)).cumprod()
-    df["strategy_equity_with_cost"] = (
-        1 + df["strategy_return_with_cost"].fillna(0)
-    ).cumprod()
+    # Rolling Sharpe
+    ma_df["rolling_sharpe"] = rolling_sharpe(
+        ma_df["strategy_return_with_cost"],
+        window=252,
+    )
 
-    return df
+    # Portfolio
+    stock_ids = ["0050", "2330", "2317", "2454", "2303"]
 
+    data = load_multiple_stocks(
+        stock_ids,
+        start_date=start_date,
+        end_date=end_date,
+    )
 
-def performance_metrics(df, return_col):
-    returns = df[return_col].fillna(0)
+    close_table = build_close_table(data)
 
-    equity = (1 + returns).cumprod()
+    eq_portfolio = equal_weight_portfolio(close_table)
+    eq_metrics = performance_metrics_from_equity(
+        eq_portfolio["portfolio_equity"]
+    )
+    print_metrics("Equal Weight Portfolio", eq_metrics)
 
-    total_return = equity.iloc[-1] - 1
-    annualized_return = equity.iloc[-1] ** (252 / len(equity)) - 1
-    annualized_volatility = returns.std() * np.sqrt(252)
+    monthly_result = monthly_rebalance_portfolio(close_table)
+    monthly_metrics = performance_metrics_from_equity(
+        monthly_result["equity"]
+    )
+    print_metrics("Monthly Rebalance Portfolio", monthly_metrics)
 
-    if annualized_volatility == 0:
-        sharpe_ratio = np.nan
-    else:
-        sharpe_ratio = annualized_return / annualized_volatility
+    cs_result, weights = cross_sectional_momentum(
+        close_table,
+        lookback=60,
+        top_n=2,
+        rebalance_freq="M",
+    )
 
-    running_max = equity.cummax()
-    drawdown = equity / running_max - 1
-    max_drawdown = drawdown.min()
+    cs_metrics = performance_metrics_from_equity(
+        cs_result["portfolio_equity"]
+    )
+    print_metrics("Cross-Sectional Momentum", cs_metrics)
 
-    return {
-        "total_return": total_return,
-        "annualized_return": annualized_return,
-        "annualized_volatility": annualized_volatility,
-        "sharpe_ratio": sharpe_ratio,
-        "max_drawdown": max_drawdown
+    # Strategy Comparison
+    strategy_returns = {
+        "Buy and Hold": bh_df["return"],
+        "MA20/60": ma_df["strategy_return_with_cost"],
+        "Mean Reversion": mr_df["strategy_return_with_cost"],
+        "Time-Series Momentum": mom_df["strategy_return_with_cost"],
+        "Equal Weight Portfolio": eq_portfolio["portfolio_return"],
+        "Cross-Sectional Momentum": cs_result["portfolio_return"],
     }
 
+    comparison_table = build_strategy_comparison(strategy_returns)
 
-def compare_ma_params(df, param_list, cost=0.001):
-    results = []
+    print("\nStrategy Comparison")
+    print(format_result_table(comparison_table))
 
-    for short_window, long_window in param_list:
-        result_df = ma_strategy(
-            df=df,
-            short_window=short_window,
-            long_window=long_window,
-            cost=cost
-        )
+    # Plots
+    plot_price_with_ma(ma_df, title="0050 Price with MA20/60")
 
-        metrics = performance_metrics(
-            result_df,
-            return_col="strategy_return_with_cost"
-        )
-
-        metrics["short_window"] = short_window
-        metrics["long_window"] = long_window
-        metrics["num_trades"] = int(result_df["trade"].sum())
-
-        results.append(metrics)
-
-    result_table = pd.DataFrame(results)
-
-    result_table = result_table[
-        [
-            "short_window",
-            "long_window",
-            "total_return",
-            "annualized_return",
-            "annualized_volatility",
-            "sharpe_ratio",
-            "max_drawdown",
-            "num_trades"
-        ]
-    ]
-
-    return result_table
-
-
-def format_result_table(result_table):
-    display_table = result_table.copy()
-
-    percent_cols = [
-        "total_return",
-        "annualized_return",
-        "annualized_volatility",
-        "max_drawdown"
-    ]
-
-    for col in percent_cols:
-        display_table[col] = display_table[col].map(lambda x: f"{x:.2%}")
-
-    display_table["sharpe_ratio"] = display_table["sharpe_ratio"].map(
-        lambda x: f"{x:.2f}"
+    plot_equity(
+        {
+            "Buy and Hold": bh_df["equity"],
+            "MA20/60": ma_df["strategy_equity_with_cost"],
+            "Mean Reversion": mr_df["strategy_equity_with_cost"],
+            "Momentum": mom_df["strategy_equity_with_cost"],
+        },
+        title="Single Asset Strategy Comparison",
     )
 
-    return display_table
+    plot_rolling_sharpe(
+        ma_df["rolling_sharpe"],
+        title="MA20/60 Rolling 1-Year Sharpe",
+    )
+
+    plot_equity(
+        {
+            "Equal Weight": eq_portfolio["portfolio_equity"],
+            "Monthly Rebalance": monthly_result["equity"],
+            "Cross-Sectional Momentum": cs_result["portfolio_equity"],
+        },
+        title="Portfolio Strategy Comparison",
+    )
 
 
-# =========================
-# Main
-# =========================
-
-df = load_stock_data(
-    stock_id="0050",
-    start_date="2015-01-01",
-    end_date="2025-01-01"
-)
-
-param_list = [
-    (5, 20),
-    (20, 60),
-    (50, 200),
-]
-
-# Full period comparison
-result_table = compare_ma_params(
-    df=df,
-    param_list=param_list,
-    cost=0.001
-)
-
-print("Full Period Result")
-print(format_result_table(result_table))
-
-
-# Buy and Hold
-df_buy_hold = df.copy()
-df_buy_hold["return"] = df_buy_hold["close"].pct_change() # curr / prev - 1
-
-buy_hold_metrics = performance_metrics(df_buy_hold, "return")
-
-print("\nBuy and Hold Performance")
-print(f"Total Return: {buy_hold_metrics['total_return']:.2%}")
-print(f"Annualized Return: {buy_hold_metrics['annualized_return']:.2%}")
-print(f"Annualized Volatility: {buy_hold_metrics['annualized_volatility']:.2%}")
-print(f"Sharpe Ratio: {buy_hold_metrics['sharpe_ratio']:.2f}")
-print(f"Max Drawdown: {buy_hold_metrics['max_drawdown']:.2%}")
-
-
-# Plot MA20/MA60
-df_20_60 = ma_strategy(
-    df=df,
-    short_window=20,
-    long_window=60,
-    cost=0.001
-)
-
-df_20_60[["close", "short_ma", "long_ma"]].plot(
-    title="0050 Price with MA20 / MA60",
-    figsize=(12, 6)
-)
-plt.show()
-
-df_20_60[
-    ["buy_hold_equity", "strategy_equity", "strategy_equity_with_cost"]
-].plot(
-    title="Buy & Hold vs MA Strategy",
-    figsize=(12, 6)
-)
-plt.show()
-
-
-# Train / Test Split
-train_df = df.loc["2015-01-01":"2020-12-31"].copy()
-test_df = df.loc["2021-01-01":"2025-01-01"].copy()
-
-train_result_table = compare_ma_params(
-    df=train_df,
-    param_list=param_list,
-    cost=0.001
-)
-
-print("\nTrain Result")
-print(format_result_table(train_result_table))
-
-best_row = train_result_table.sort_values(
-    "sharpe_ratio",
-    ascending=False
-).iloc[0]
-
-best_short = int(best_row["short_window"])
-best_long = int(best_row["long_window"])
-
-print("\nBest Parameters from Train Period")
-print("Short MA:", best_short)
-print("Long MA:", best_long)
-print(f"Train Sharpe: {best_row['sharpe_ratio']:.2f}")
-
-test_result_df = ma_strategy(
-    df=test_df,
-    short_window=best_short,
-    long_window=best_long,
-    cost=0.001
-)
-
-test_metrics = performance_metrics(
-    test_result_df,
-    return_col="strategy_return_with_cost"
-)
-
-print("\nTest Performance")
-print(f"Total Return: {test_metrics['total_return']:.2%}")
-print(f"Annualized Return: {test_metrics['annualized_return']:.2%}")
-print(f"Annualized Volatility: {test_metrics['annualized_volatility']:.2%}")
-print(f"Sharpe Ratio: {test_metrics['sharpe_ratio']:.2f}")
-print(f"Max Drawdown: {test_metrics['max_drawdown']:.2%}")
-
-test_result_df[
-    ["buy_hold_equity", "strategy_equity_with_cost"]
-].plot(
-    title=f"Test Period: Buy & Hold vs MA{best_short}/{best_long} Strategy",
-    figsize=(12, 6)
-)
-plt.show()
+if __name__ == "__main__":
+    main()
