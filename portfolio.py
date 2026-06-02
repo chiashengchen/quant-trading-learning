@@ -3,7 +3,14 @@ import pandas as pd
 
 
 def equal_weight_portfolio(close_table):
+    close_table = close_table.copy()
+
+    close_table = close_table.replace(0, np.nan)
+    close_table = close_table.mask(close_table < 0, np.nan)
+    close_table = close_table.dropna()
+
     returns = close_table.pct_change().fillna(0)
+    returns = returns.replace([np.inf, -np.inf], np.nan).fillna(0)
 
     n = len(close_table.columns)
     weights = np.array([1 / n] * n)
@@ -18,6 +25,12 @@ def equal_weight_portfolio(close_table):
 
 
 def monthly_rebalance_portfolio(close_table, initial_cash=100000):
+    close_table = close_table.copy()
+
+    close_table = close_table.replace(0, np.nan)
+    close_table = close_table.mask(close_table < 0, np.nan)
+    close_table = close_table.dropna()
+
     stock_ids = close_table.columns
     n = len(stock_ids)
 
@@ -74,12 +87,17 @@ def cross_sectional_momentum(
     top_n=2,
     rebalance_freq="ME",
 ):
-    returns = close_table.pct_change().replace([np.inf, -np.inf], np.nan)
+    close_table = close_table.copy()
 
+    close_table = close_table.replace(0, np.nan)
+    close_table = close_table.mask(close_table < 0, np.nan)
+    close_table = close_table.dropna()
+
+    returns = close_table.pct_change().fillna(0)
     momentum = close_table / close_table.shift(lookback) - 1
 
     weights = pd.DataFrame(
-        np.nan,
+        0.0,
         index=close_table.index,
         columns=close_table.columns,
     )
@@ -99,14 +117,14 @@ def cross_sectional_momentum(
             continue
 
         selected = scores.sort_values(ascending=False).head(top_n).index
-
-        weights.loc[actual_date] = 0.0
         weights.loc[actual_date, selected] = 1 / top_n
 
-    weights = weights.ffill().fillna(0)
+    weights = weights.replace(0, np.nan).ffill().fillna(0)
+
+    # 避免偷看未來
     weights = weights.shift(1).fillna(0)
 
-    portfolio_return = (weights * returns).sum(axis=1).fillna(0)
+    portfolio_return = (weights * returns).sum(axis=1)
     portfolio_equity = (1 + portfolio_return).cumprod()
 
     result = pd.DataFrame({

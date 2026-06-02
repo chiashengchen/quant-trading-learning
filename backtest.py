@@ -1,11 +1,17 @@
 import pandas as pd
 
-from config import DEFAULT_FEE_RATE, DEFAULT_TAX_RATE, DEFAULT_INITIAL_CASH
+from config import (
+    DEFAULT_PRICE_COL,
+    DEFAULT_INITIAL_CASH,
+    DEFAULT_FEE_RATE,
+    DEFAULT_TAX_RATE,
+)
+
 from metrics import performance_metrics_from_returns
 from strategies import ma_strategy
 
 
-def compare_ma_params(df, param_list):
+def compare_ma_params(df, param_list, price_col=DEFAULT_PRICE_COL):
     results = []
 
     for short_window, long_window in param_list:
@@ -13,6 +19,7 @@ def compare_ma_params(df, param_list):
             df=df,
             short_window=short_window,
             long_window=long_window,
+            price_col=price_col,
         )
 
         metrics = performance_metrics_from_returns(
@@ -41,15 +48,23 @@ def compare_ma_params(df, param_list):
     ]
 
 
-def train_test_ma(df, param_list, train_start, train_end, test_start, test_end):
+def train_test_ma(
+    df,
+    param_list,
+    train_start,
+    train_end,
+    test_start,
+    test_end,
+    price_col=DEFAULT_PRICE_COL,
+):
     train_df = df.loc[train_start:train_end].copy()
     test_df = df.loc[test_start:test_end].copy()
 
-    train_result = compare_ma_params(train_df, param_list)
+    train_result = compare_ma_params(train_df, param_list, price_col=price_col)
 
     best_row = train_result.sort_values(
         "sharpe_ratio",
-        ascending=False
+        ascending=False,
     ).iloc[0]
 
     best_short = int(best_row["short_window"])
@@ -59,6 +74,7 @@ def train_test_ma(df, param_list, train_start, train_end, test_start, test_end):
         test_df,
         short_window=best_short,
         long_window=best_long,
+        price_col=price_col,
     )
 
     test_metrics = performance_metrics_from_returns(
@@ -74,7 +90,13 @@ def train_test_ma(df, param_list, train_start, train_end, test_start, test_end):
     }
 
 
-def walk_forward_test(df, param_list, train_years=3, test_years=1):
+def walk_forward_test(
+    df,
+    param_list,
+    train_years=3,
+    test_years=1,
+    price_col=DEFAULT_PRICE_COL,
+):
     results = []
 
     start_year = df.index.min().year
@@ -91,17 +113,27 @@ def walk_forward_test(df, param_list, train_years=3, test_years=1):
         if len(train_df) == 0 or len(test_df) == 0:
             continue
 
-        train_table = compare_ma_params(train_df, param_list)
+        train_table = compare_ma_params(
+            train_df,
+            param_list,
+            price_col=price_col,
+        )
 
         best = train_table.sort_values(
             "sharpe_ratio",
-            ascending=False
+            ascending=False,
         ).iloc[0]
 
         best_short = int(best["short_window"])
         best_long = int(best["long_window"])
 
-        test_result = ma_strategy(test_df, best_short, best_long)
+        test_result = ma_strategy(
+            test_df,
+            best_short,
+            best_long,
+            price_col=price_col,
+        )
+
         test_metrics = performance_metrics_from_returns(
             test_result["strategy_return_with_cost"]
         )
@@ -121,11 +153,11 @@ def walk_forward_test(df, param_list, train_years=3, test_years=1):
     return pd.DataFrame(results)
 
 
-def add_ma_signal(df, short_window=20, long_window=60):
+def add_ma_signal(df, short_window=20, long_window=60, price_col=DEFAULT_PRICE_COL):
     df = df.copy()
 
-    df["short_ma"] = df["close"].rolling(short_window).mean()
-    df["long_ma"] = df["close"].rolling(long_window).mean()
+    df["short_ma"] = df[price_col].rolling(short_window).mean()
+    df["long_ma"] = df[price_col].rolling(long_window).mean()
 
     df["signal"] = 0
     df.loc[df["short_ma"] > df["long_ma"], "signal"] = 1
@@ -140,7 +172,13 @@ def cash_backtest(
     initial_cash=DEFAULT_INITIAL_CASH,
     fee_rate=DEFAULT_FEE_RATE,
     tax_rate=DEFAULT_TAX_RATE,
+    execution_price_col="close",
 ):
+    """
+    真實成交模擬：
+    - signal 可以由 adjusted close 產生
+    - 但 execution 應該用 raw close / open
+    """
     df = df.copy()
 
     cash = initial_cash
@@ -150,7 +188,7 @@ def cash_backtest(
     records = []
 
     for date, row in df.iterrows():
-        price = row["close"]
+        price = row[execution_price_col]
         target_position = row["position_signal"]
 
         action = "HOLD"
@@ -178,7 +216,7 @@ def cash_backtest(
 
         records.append({
             "date": date,
-            "close": price,
+            "price": price,
             "signal": row["signal"],
             "position_signal": target_position,
             "action": action,

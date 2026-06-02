@@ -1,4 +1,10 @@
-from data_loader import load_stock_data, load_multiple_stocks, build_close_table
+from data_loader import (
+    load_stock_data,
+    load_multiple_stocks,
+    build_clean_close_table,
+)
+
+from data_validation import validate_price_table
 
 from strategies import (
     buy_and_hold,
@@ -29,7 +35,11 @@ from metrics import (
     format_result_table,
 )
 
-from analysis import rolling_sharpe, build_strategy_comparison, trade_summary
+from analysis import (
+    rolling_sharpe,
+    build_strategy_comparison,
+    trade_summary,
+)
 
 from plotting import (
     plot_price_with_ma,
@@ -43,47 +53,77 @@ def main():
     start_date = "2015-01-01"
     end_date = "2025-01-01"
 
+    # 之後如果你有 adjusted close，可以把 price_col 改成 "adj_close"
+    price_col = "close"
+
     df = load_stock_data(stock_id, start_date, end_date)
 
-    # Buy and Hold
-    bh_df = buy_and_hold(df)
+    validate_price_table(df[[price_col]])
+
+    # Week 1: Buy and Hold
+    bh_df = buy_and_hold(df, price_col=price_col)
     bh_metrics = performance_metrics_from_returns(bh_df["return"])
     print_metrics("Buy and Hold", bh_metrics)
 
-    # MA Strategy
-    ma_df = ma_strategy(df, short_window=20, long_window=60)
+    # Week 2-3: MA Strategy
+    ma_df = ma_strategy(
+        df,
+        short_window=20,
+        long_window=60,
+        price_col=price_col,
+    )
+
     ma_metrics = performance_metrics_from_returns(
         ma_df["strategy_return_with_cost"]
     )
+
     print_metrics("MA20/60 Strategy", ma_metrics)
 
-    # Mean Reversion
-    mr_df = mean_reversion_strategy(df, window=20, entry_z=-2, exit_z=0)
+    # Week 7: Mean Reversion
+    mr_df = mean_reversion_strategy(
+        df,
+        window=20,
+        entry_z=-2,
+        exit_z=0,
+        price_col=price_col,
+    )
+
     mr_metrics = performance_metrics_from_returns(
         mr_df["strategy_return_with_cost"]
     )
+
     print_metrics("Mean Reversion Strategy", mr_metrics)
 
-    # Momentum
-    mom_df = time_series_momentum_strategy(df, lookback=60)
+    # Week 8: Time-Series Momentum
+    mom_df = time_series_momentum_strategy(
+        df,
+        lookback=60,
+        price_col=price_col,
+    )
+
     mom_metrics = performance_metrics_from_returns(
         mom_df["strategy_return_with_cost"]
     )
+
     print_metrics("Time-Series Momentum Strategy", mom_metrics)
 
-    # MA Parameter Comparison
+    # Week 3: MA Parameter Comparison
     param_list = [
         (5, 20),
         (20, 60),
         (50, 200),
     ]
 
-    ma_param_table = compare_ma_params(df, param_list)
+    ma_param_table = compare_ma_params(
+        df,
+        param_list,
+        price_col=price_col,
+    )
 
     print("\nMA Parameter Comparison")
     print(format_result_table(ma_param_table))
 
-    # Train / Test
+    # Week 3: Train / Test
     tt_result = train_test_ma(
         df=df,
         param_list=param_list,
@@ -91,6 +131,7 @@ def main():
         train_end="2020-12-31",
         test_start="2021-01-01",
         test_end="2025-01-01",
+        price_col=price_col,
     )
 
     print("\nTrain Result")
@@ -102,25 +143,32 @@ def main():
 
     print_metrics("Test Performance", tt_result["test_metrics"])
 
-    # Walk Forward
+    # Week 6: Walk Forward
     wf_result = walk_forward_test(
         df=df,
         param_list=param_list,
         train_years=3,
         test_years=1,
+        price_col=price_col,
     )
 
     print("\nWalk Forward Result")
-    print(wf_result)
+    print(format_result_table(wf_result))
 
-    # Cash Backtest
-    df_signal = add_ma_signal(df, short_window=20, long_window=60)
+    # Week 4: Cash Backtest
+    df_signal = add_ma_signal(
+        df,
+        short_window=20,
+        long_window=60,
+        price_col=price_col,
+    )
 
     cash_result = cash_backtest(
         df_signal,
         initial_cash=100000,
         fee_rate=0.001425,
         tax_rate=0.003,
+        execution_price_col="close",
     )
 
     cash_metrics = performance_metrics_from_equity(cash_result["equity"])
@@ -134,13 +182,13 @@ def main():
     print("\nTrade Summary")
     print(trade_summary(trades))
 
-    # Rolling Sharpe
+    # Week 6: Rolling Sharpe
     ma_df["rolling_sharpe"] = rolling_sharpe(
         ma_df["strategy_return_with_cost"],
         window=252,
     )
 
-    # Portfolio
+    # Week 5 / 8: Portfolio
     stock_ids = ["0050", "2330", "2317", "2454", "2303"]
 
     data = load_multiple_stocks(
@@ -149,7 +197,9 @@ def main():
         end_date=end_date,
     )
 
-    close_table = build_close_table(data)
+    close_table = build_clean_close_table(data, price_col="close")
+
+    validate_price_table(close_table)
 
     eq_portfolio = equal_weight_portfolio(close_table)
     eq_metrics = performance_metrics_from_equity(
@@ -175,7 +225,7 @@ def main():
     )
     print_metrics("Cross-Sectional Momentum", cs_metrics)
 
-    # Strategy Comparison
+    # Strategy comparison
     strategy_returns = {
         "Buy and Hold": bh_df["return"],
         "MA20/60": ma_df["strategy_return_with_cost"],

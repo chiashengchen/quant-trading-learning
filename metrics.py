@@ -1,10 +1,9 @@
 import numpy as np
-import pandas as pd
 from config import TRADING_DAYS
 
 
 def performance_metrics_from_returns(returns):
-    returns = returns.replace([np.inf, -np.inf], np.nan).fillna(0)
+    returns = returns.fillna(0)
     equity = (1 + returns).cumprod()
 
     total_return = equity.iloc[-1] - 1
@@ -31,7 +30,7 @@ def performance_metrics_from_returns(returns):
 
 def performance_metrics_from_equity(equity):
     equity = equity.dropna()
-    returns = equity.pct_change().replace([np.inf, -np.inf], np.nan).fillna(0)
+    returns = equity.pct_change().fillna(0)
 
     total_return = equity.iloc[-1] - 1
     annualized_return = equity.iloc[-1] ** (TRADING_DAYS / len(equity)) - 1
@@ -72,15 +71,16 @@ def format_result_table(result_table):
         "annualized_return",
         "annualized_volatility",
         "max_drawdown",
+        "test_total_return",
+        "test_max_drawdown",
     ]
 
     for col in percent_cols:
         if col in display_table.columns:
             display_table[col] = display_table[col].map(lambda x: f"{x:.2%}")
 
-    if "sharpe_ratio" in display_table.columns:
-        display_table["sharpe_ratio"] = display_table["sharpe_ratio"].map(
-            lambda x: f"{x:.2f}"
-        )
+    for col in ["sharpe_ratio", "test_sharpe"]:
+        if col in display_table.columns:
+            display_table[col] = display_table[col].map(lambda x: f"{x:.2f}")
 
     return display_table
