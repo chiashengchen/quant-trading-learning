@@ -44,5 +44,9 @@ def build_close_table(data):
 
     # 移除最前面仍然缺資料的 row
     close_table = close_table.dropna()
+    # TODO: 某些股票會在某天停止交易 應該用 ffill() 延續股價但要用另一個 table 指出當天停止交易
+    print((close_table == 0).sum())
+    bad_rows = close_table[(close_table == 0).any(axis=1)]
+    print(bad_rows)
 
     return close_table
