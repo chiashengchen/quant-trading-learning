@@ -20,6 +20,7 @@ fonttools==4.63.0
 frozenlist==1.8.0
 idna==3.18
 importlib_metadata==9.0.0
+iniconfig==2.3.0
 ipython==8.39.0
 itsdangerous==2.2.0
 jedi==0.20.0
@@ -40,6 +41,7 @@ parso==0.8.7
 pexpect==4.9.0
 pillow==12.2.0
 pipdeptree==3.1.0
+pluggy==1.6.0
 prettytable==3.17.0
 prompt_toolkit==3.0.52
 propcache==0.5.2
@@ -50,6 +52,7 @@ pydantic_core==2.46.4
 pyecharts==2.1.0
 Pygments==2.20.0
 pyparsing==3.3.2
+pytest==9.0.3
 python-dateutil==2.9.0.post0
 pytz==2026.2
 requests==2.34.2
