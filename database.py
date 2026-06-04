@@ -35,12 +35,9 @@ def init_db():
 
 
 def save_daily_prices(stock_id, df):
-    """
-    df index should be date.
-    Expected columns from FinMind:
-    open, max, min, close, Trading_Volume,
-    Trading_money, spread, Trading_turnover
-    """
+    if df.empty:
+        return
+
     conn = get_connection()
 
     df = df.copy()

@@ -19,19 +19,13 @@ def load_stock_data(stock_id, start_date, end_date):
     return df
 
 
-def load_multiple_stocks(stock_ids, start_date, end_date):
-    data = {}
-
-    for stock_id in stock_ids:
-        data[stock_id] = load_stock_data(stock_id, start_date, end_date)
-
-    return data
-
-
 def build_raw_close_table(data, price_col="close"):
     close_table = pd.DataFrame()
 
     for stock_id, df in data.items():
+        if df.empty:
+            continue
+
         close_table[stock_id] = df[price_col]
 
     close_table = close_table.sort_index()
@@ -42,11 +36,9 @@ def build_raw_close_table(data, price_col="close"):
 def build_clean_close_table(data, price_col="close"):
     close_table = build_raw_close_table(data, price_col=price_col)
 
-    # 0 或負價格視為錯誤資料
     close_table = close_table.replace(0, np.nan)
     close_table = close_table.mask(close_table < 0, np.nan)
 
-    # 保守版本：只保留所有股票都有價格的日期
     close_table = close_table.dropna()
 
     return close_table
