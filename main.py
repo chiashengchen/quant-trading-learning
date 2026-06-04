@@ -1,4 +1,9 @@
-from data_service import get_daily_prices
+
+from data_service import (
+    load_or_fetch_stock_data,
+    load_or_fetch_multiple_stocks,
+)
+from data_loader import build_clean_close_table
 from data_validation import validate_price_table
 
 from strategies import (
@@ -51,7 +56,8 @@ def main():
     # 之後如果你有 adjusted close，可以把 price_col 改成 "adj_close"
     price_col = "close"
 
-    df = get_daily_prices(
+
+    df = load_or_fetch_stock_data(
         stock_id="0050",
         start_date="2015-01-01",
         end_date="2025-01-01",
@@ -190,7 +196,7 @@ def main():
     # Week 5 / 8: Portfolio
     stock_ids = ["0050", "2330", "2317", "2454", "2303"]
 
-    data = load_multiple_stocks(
+    data = load_or_fetch_multiple_stocks(
         stock_ids,
         start_date=start_date,
         end_date=end_date,
